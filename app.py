@@ -7,7 +7,7 @@ import streamlit as st
 
 from ingest import load_file, chunk_pages
 from retrieval import build_index, search
-from llm import ask_llm, NOT_FOUND_MESSAGE
+from llm import ask_llm, rewrite_question, NOT_FOUND_MESSAGE
 
 st.set_page_config(page_title="Smart Document Assistant", page_icon="📚", layout="wide")
 st.title("📚 Smart Document Knowledge Assistant")
@@ -78,6 +78,12 @@ with st.sidebar:
         help="If the best match scores below this, the app says the answer "
              "isn't in your documents instead of guessing.",
     )
+    use_rewrite = st.checkbox(
+        "Understand follow-up questions",
+        value=True,
+        help="Rewrites questions like 'what about its units?' into full "
+             "questions using the chat history before searching.",
+    )
     if st.button("Clear chat"):
         st.session_state.messages = []
         st.rerun()
@@ -85,6 +91,8 @@ with st.sidebar:
 # ---- Show the chat so far ---------------------------------------------------
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
+        if m.get("rewritten"):
+            st.caption(f"🔎 Searched for: {m['rewritten']}")
         st.markdown(m["content"])
         if m.get("sources"):
             show_sources(m["sources"])
@@ -102,8 +110,17 @@ if question:
 
         with st.chat_message("assistant"):
             with st.spinner("Searching your documents..."):
+                # Turn follow-ups ("what about its units?") into full questions.
+                # [:-1] leaves out the question we just added to the history.
+                search_query = question
+                if use_rewrite:
+                    search_query = rewrite_question(
+                        question, st.session_state.messages[:-1]
+                    )
+                rewritten = search_query if search_query != question else None
+
                 results = search(
-                    question,
+                    search_query,
                     st.session_state.index,
                     st.session_state.chunks,
                     k=top_k,
@@ -112,13 +129,20 @@ if question:
                     answer = NOT_FOUND_MESSAGE
                     sources = []
                 else:
-                    answer = ask_llm(question, results)
+                    answer = ask_llm(search_query, results)
                     sources = results
 
+            if rewritten:
+                st.caption(f"🔎 Searched for: {rewritten}")
             st.markdown(answer)
             if sources:
                 show_sources(sources)
 
         st.session_state.messages.append(
-            {"role": "assistant", "content": answer, "sources": sources}
+            {
+                "role": "assistant",
+                "content": answer,
+                "sources": sources,
+                "rewritten": rewritten,
+            }
         )
