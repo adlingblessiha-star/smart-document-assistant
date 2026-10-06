@@ -1,4 +1,4 @@
-# Smart Document Knowledge Assistant
+
 
 Upload lecture PDFs or text files, ask questions in a chat, and get answers taken **only from your files**, with the exact passages and page numbers shown so you can check them.
 
@@ -48,6 +48,8 @@ Chunk size comparison (same questions, different split sizes):
 | 1200 | [100]% | [100]% |
 
 ![Evaluation results](screenshots/evalresult.png)
+<img width="1277" height="702" alt="chunk sizes" src="https://github.com/user-attachments/assets/a978e62b-c3a6-4a2f-93b9-c1183b45f87e" /># Smart Document Knowledge Assistant
+
 
 ## Tech stack
 
