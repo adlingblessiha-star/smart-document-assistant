@@ -1,0 +1,14 @@
+PHYSICS: OHM'S LAW
+Ohm's law states that the current flowing through a conductor is directly proportional to the voltage across it, as long as the temperature stays constant. The formula is V = I x R, where V is voltage in volts, I is current in amperes and R is resistance in ohms. A material that follows this law is called an ohmic conductor.
+
+PHYSICS: RESISTANCE
+The resistance of a wire depends on its length, its cross-sectional area and the material it is made of. A longer wire has more resistance. A thicker wire has less resistance. Copper has low resistance, which is why it is widely used in electrical wiring.
+
+BIOLOGY: PHOTOSYNTHESIS
+Photosynthesis is the process by which green plants make food using sunlight, water and carbon dioxide. It takes place in the chloroplasts, which contain a green pigment called chlorophyll. The plant produces glucose and releases oxygen as a by-product.
+
+PYTHON: LISTS
+A list in Python is an ordered, changeable collection of items written inside square brackets, for example fruits = ["apple", "banana", "mango"]. You can add an item with append(), remove an item with remove(), and get the number of items with len(). Lists can hold items of different types.
+
+PYTHON: DICTIONARIES
+A dictionary stores data as key and value pairs inside curly brackets, for example student = {"name": "Asha", "year": 1}. Each key must be unique. You read a value by using its key, such as student["name"].
