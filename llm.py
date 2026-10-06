@@ -66,44 +66,97 @@ def _model_order():
     if _working_model in order:
         order.remove(_working_model)
         order.insert(0, _working_model)
+    elif _working_model:
+        order.insert(0, _working_model)
     return order
+
+
+def _discover_models():
+    """Ask Google which text models this API key can use. Newest 'flash' first."""
+    skip = ("image", "tts", "live", "audio", "embedding", "robotics", "computer", "native")
+    found = []
+    try:
+        for m in get_client().models.list():
+            name = (m.name or "").replace("models/", "")
+            actions = getattr(m, "supported_actions", None) or []
+            if "flash" not in name or any(word in name for word in skip):
+                continue
+            if actions and "generateContent" not in actions:
+                continue
+            version = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
+            found.append(
+                (float(version.group(1)) if version else 0.0, "lite" not in name, name)
+            )
+    except Exception:
+        return []
+    found.sort(reverse=True)
+    return [name for _, _, name in found]
+
+
+def _try_model(model, prompt):
+    """Try one model. Returns (status, value) where status is:
+       "ok" (value = text), "missing" (404, value = error) or "fail" (value = error).
+    Temporary errors (503 busy, 429 rate limit) are retried a few times.
+    """
+    last_error = None
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        try:
+            response = get_client().models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+            if response.text:
+                return "ok", response.text.strip()
+            return "fail", "The model returned an empty answer."
+        except Exception as e:
+            last_error = e
+            message = str(e)
+            if "404" in message or "NOT_FOUND" in message:
+                return "missing", e
+            is_temporary = any(
+                word in message
+                for word in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
+            )
+            if is_temporary and attempt < len(RETRY_DELAYS):
+                time.sleep(RETRY_DELAYS[attempt])
+                continue
+            return "fail", e
+    return "fail", last_error
 
 
 def _generate(prompt):
     """Send a prompt to Gemini. Returns (text, error); exactly one is None.
 
-    - Temporary errors (503 busy, 429 rate limit) are retried a few times.
-    - A 404 "model not found" moves on to the next model in FALLBACK_MODELS.
+    Tries MODEL_NAME, then FALLBACK_MODELS. If every one of those is "not
+    found" (Google retired them), it asks Google which models your key can use
+    and tries the newest ones. The model that works is remembered.
     """
     global _working_model
+    candidates = _model_order()
+    tried = []
     last_error = None
+    discovered = False
 
-    for model in _model_order():
-        for attempt in range(len(RETRY_DELAYS) + 1):
-            try:
-                response = get_client().models.generate_content(
-                    model=model,
-                    contents=prompt,
-                )
-                _working_model = model
-                if response.text:
-                    return response.text.strip(), None
-                return None, "The model returned an empty answer."
-            except Exception as e:
-                last_error = e
-                message = str(e)
-                if "404" in message or "NOT_FOUND" in message:
-                    break  # this model name isn't available, try the next one
-                is_temporary = any(
-                    word in message
-                    for word in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
-                )
-                if is_temporary and attempt < len(RETRY_DELAYS):
-                    time.sleep(RETRY_DELAYS[attempt])
-                    continue
-                return None, last_error
+    while candidates:
+        model = candidates.pop(0)
+        if model in tried:
+            continue
+        tried.append(model)
 
-    return None, last_error
+        status, value = _try_model(model, prompt)
+        if status == "ok":
+            _working_model = model
+            return value, None
+        last_error = value
+        if status == "fail":
+            return None, last_error
+
+        # status == "missing": this model name isn't available to this key
+        if not candidates and not discovered:
+            discovered = True
+            candidates = [m for m in _discover_models() if m not in tried][:4]
+
+    return None, f"No Gemini model worked (tried: {', '.join(tried)}). Last error: {last_error}"
 
 
 # ---------------------------------------------------------------------------
@@ -197,10 +250,7 @@ def ask_llm(question, chunks):
     text, error = _generate(build_prompt(question, chunks))
     if text:
         return text
-    return (
-        "Sorry, the AI service is busy or unavailable right now. "
-        f"Please try again in a minute. (Details: {error})"
-    )
+    return f"Sorry, Gemini could not write an answer right now. (Details: {error})"
 
 
 # ---------------------------------------------------------------------------
