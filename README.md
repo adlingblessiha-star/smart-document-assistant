@@ -4,7 +4,7 @@ Upload lecture PDFs or text files, ask questions in a chat, and get answers take
 
 Built for the Nexus VIT Chennai Technical Recruitment 2026 (Problem 02).
 
-**Live demo:** [PASTE YOUR STREAMLIT LINK HERE]
+**Live demo:** [https://smart-document-assistant-tvqgz6fl2j8fyuj4zkvvkw.streamlit.app/]
 
 ![Chat with sources](screenshots/chat.png)
 
@@ -33,21 +33,21 @@ The Evaluation tab runs your own test questions through the search and reports h
 
 | Measure | Result |
 |---|---|
-| Test questions | [N] |
-| Right passage in top 1 | [XX]% |
-| Right passage in top 3 | [XX]% |
-| Right passage in top 5 | [XX]% |
-| Questions not in the notes correctly refused | [X] of [Y] |
+| Test questions | [2] |
+| Right passage in top 1 | [100]% |
+| Right passage in top 3 | [100]% |
+| Right passage in top 5 | [100]% |
+| Questions not in the notes correctly refused | [0] of [2] |
 
 Chunk size comparison (same questions, different split sizes):
 
 | Chunk size | Top 1 | Top 3 |
 |---|---|---|
-| 500 | [XX]% | [XX]% |
-| 800 | [XX]% | [XX]% |
-| 1200 | [XX]% | [XX]% |
+| 500 | [100]% | [100]% |
+| 800 | [100]% | [100]% |
+| 1200 | [100]% | [100]% |
 
-![Evaluation results](screenshots/evaluation.png)
+![Evaluation results](screenshots/evalresult.png)
 
 ## Tech stack
 
