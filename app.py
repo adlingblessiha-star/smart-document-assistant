@@ -10,6 +10,7 @@ import streamlit as st
 from ingest import load_file, chunk_pages
 from retrieval import build_index, search
 from llm import ask_llm, rewrite_question, NOT_FOUND_MESSAGE
+from eval_ui import render_evaluation
 from ui import (
     CSS,
     hero_html,
@@ -34,6 +35,12 @@ if "index" not in st.session_state:
     st.session_state.index = None       # the FAISS search index
 if "file_names" not in st.session_state:
     st.session_state.file_names = []
+if "pages" not in st.session_state:
+    st.session_state.pages = []         # raw pages, kept for the chunk-size test
+if "eval_results" not in st.session_state:
+    st.session_state.eval_results = None
+if "eval_sweep" not in st.session_state:
+    st.session_state.eval_sweep = None
 
 USER_AVATAR = "🧑‍🎓"
 BOT_AVATAR = "📘"
@@ -70,7 +77,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    if st.button("Process documents", type="primary", use_container_width=True):
+    if st.button("Process documents", type="primary", width="stretch"):
         if not files:
             st.warning("Add at least one file first.")
         else:
@@ -106,7 +113,10 @@ with st.sidebar:
                         )
                     else:
                         st.session_state.chunks = chunks
+                        st.session_state.pages = pages
                         st.session_state.index = index
+                        st.session_state.eval_results = None
+                        st.session_state.eval_sweep = None
                         st.session_state.file_names = [f.name for f in files]
                         st.session_state.messages = []  # fresh chat for new documents
                         status.update(
@@ -135,7 +145,7 @@ with st.sidebar:
                  "questions using the chat history before searching.",
         )
 
-    if st.button("Clear chat", use_container_width=True):
+    if st.button("Clear chat", width="stretch"):
         st.session_state.messages = []
         st.rerun()
 
@@ -148,6 +158,20 @@ if ready:
         pills_html(len(st.session_state.file_names), len(st.session_state.chunks)),
         unsafe_allow_html=True,
     )
+
+# ---- Chat / Evaluation switch -----------------------------------------------
+CHAT_VIEW = "💬 Chat"
+EVAL_VIEW = "📊 Evaluation"
+view = st.radio(
+    "View", [CHAT_VIEW, EVAL_VIEW], horizontal=True, label_visibility="collapsed"
+)
+
+if view == EVAL_VIEW:
+    if ready:
+        render_evaluation(threshold)
+    else:
+        st.markdown(steps_html(), unsafe_allow_html=True)
+    st.stop()  # nothing below (the chat) is drawn on this view
 
 # ---- Question box -----------------------------------------------------------
 # Streamlit always pins the chat box to the bottom, wherever we call it.

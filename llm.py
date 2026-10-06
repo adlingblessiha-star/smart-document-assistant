@@ -10,6 +10,7 @@ Each chunk is a dict like:
 """
 
 import os
+import re
 import time
 from dotenv import load_dotenv
 from google import genai
@@ -19,7 +20,7 @@ load_dotenv()
 
 # If you get a "model not found" error, run `python llm.py models`
 # to list the names your key can use, then paste one here.
-MODEL_NAME = "gemini-3.5-flash"
+MODEL_NAME = "gemini-2.5-flash"
 
 NOT_FOUND_MESSAGE = "This isn't in your documents."
 
@@ -167,6 +168,68 @@ def ask_llm(question, chunks):
         "Sorry, the AI service is busy or unavailable right now. "
         f"Please try again in a minute. (Details: {error})"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test-question suggestions (used by the Evaluation tab)
+# ---------------------------------------------------------------------------
+
+def generate_questions(chunks):
+    """Ask Gemini for one test question per passage.
+
+    Returns a list of rows ready for the Evaluation table:
+        {"Question", "File", "Page", "Phrase", "In notes?"}
+    Phrase is a short piece of text the right passage must contain. It is only
+    kept if it really appears in that passage.
+    """
+    blocks = [f"[{i}]\n{c['text']}" for i, c in enumerate(chunks, start=1)]
+    passages = "\n\n".join(blocks)
+
+    prompt = f"""You are helping test a search system that looks things up in student notes.
+For EACH numbered passage below, write ONE question a student could answer using
+only that passage. Also give a key phrase (1 to 4 words) copied exactly from the
+passage that the answer depends on.
+
+Rules:
+- Use your own wording. Do not copy whole sentences from the passage.
+- The question must make sense on its own (never say "in this passage").
+- Output exactly one line per passage, in this format:
+  number | question | key phrase
+- Output nothing else.
+
+Passages:
+{passages}
+"""
+    text, error = _generate(prompt)
+    if error or not text:
+        return []
+
+    rows = []
+    for line in text.splitlines():
+        cells = [p.strip() for p in line.split("|")]
+        if len(cells) < 2:
+            continue
+        match = re.match(r"\[?(\d+)\]?", cells[0])
+        if not match:
+            continue
+        idx = int(match.group(1)) - 1
+        if not 0 <= idx < len(chunks) or not cells[1]:
+            continue
+
+        chunk = chunks[idx]
+        phrase = cells[2] if len(cells) > 2 else ""
+        if phrase.lower() not in chunk["text"].lower():
+            phrase = ""
+        rows.append(
+            {
+                "Question": cells[1],
+                "File": chunk["source"],
+                "Page": int(chunk["page"]),
+                "Phrase": phrase,
+                "In notes?": True,
+            }
+        )
+    return rows
 
 
 def list_models():

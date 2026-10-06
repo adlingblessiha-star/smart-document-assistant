@@ -94,3 +94,32 @@ def search(question, index, chunks, k=4):
         item["score"] = float(scores[i])
         results.append(item)
     return results
+
+
+def search_many(questions, index, chunks, k=5):
+    """Like search(), but for many questions at once.
+
+    Used by the Evaluation tab. The questions are sent to Gemini in batches,
+    which is much faster and cheaper than one request per question.
+    Returns one list of results per question.
+    """
+    if not questions:
+        return []
+
+    parts = []
+    for start in range(0, len(questions), BATCH_SIZE):
+        parts.append(_embed(questions[start:start + BATCH_SIZE], "RETRIEVAL_QUERY"))
+    q_matrix = _normalise(np.vstack(parts))
+    all_scores = q_matrix @ index.T          # one row of scores per question
+
+    k = min(k, len(chunks))
+    output = []
+    for scores in all_scores:
+        top_ids = np.argsort(scores)[::-1][:k]
+        results = []
+        for i in top_ids:
+            item = dict(chunks[int(i)])
+            item["score"] = float(scores[i])
+            results.append(item)
+        output.append(results)
+    return output
