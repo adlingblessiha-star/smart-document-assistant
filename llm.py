@@ -20,7 +20,13 @@ load_dotenv()
 
 # If you get a "model not found" error, run `python llm.py models`
 # to list the names your key can use, then paste one here.
-MODEL_NAME = "gemini-2.5-flash"
+# (Google's own error message also names the replacement model.)
+MODEL_NAME = "gemini-3.8-flash"
+
+# If MODEL_NAME is ever "not found" (Google retires models regularly), these are
+# tried next. The one that works is remembered for the rest of the session.
+FALLBACK_MODELS = ["gemini-2.5-flash"]
+_working_model = None
 
 NOT_FOUND_MESSAGE = "This isn't in your documents."
 
@@ -34,42 +40,69 @@ def get_client():
     """Create the Gemini client once and reuse it."""
     global _client
     if _client is None:
+        # Locally the key comes from your .env file. When deployed on Streamlit
+        # Community Cloud it comes from the app's Secrets settings.
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("GEMINI_API_KEY")
+            except Exception:
+                api_key = None
+        if not api_key:
             raise RuntimeError(
-                "GEMINI_API_KEY not found. Check that your .env file is in the "
-                "doc-assistant folder and contains: GEMINI_API_KEY=your_key"
+                "GEMINI_API_KEY not found. Locally, check that your .env file is "
+                "in the project folder and contains: GEMINI_API_KEY=your_key. "
+                "On Streamlit Cloud, add it under the app's Settings, Secrets."
             )
+        api_key = str(api_key).strip()
         _client = genai.Client(api_key=api_key)
     return _client
 
 
-def _generate(prompt):
-    """Send a prompt to Gemini, retrying on temporary errors (503, 429).
+def _model_order():
+    """Models to try, with the last one that worked first."""
+    order = [MODEL_NAME] + [m for m in FALLBACK_MODELS if m != MODEL_NAME]
+    if _working_model in order:
+        order.remove(_working_model)
+        order.insert(0, _working_model)
+    return order
 
-    Returns (text, error). Exactly one of them is None.
+
+def _generate(prompt):
+    """Send a prompt to Gemini. Returns (text, error); exactly one is None.
+
+    - Temporary errors (503 busy, 429 rate limit) are retried a few times.
+    - A 404 "model not found" moves on to the next model in FALLBACK_MODELS.
     """
+    global _working_model
     last_error = None
-    for attempt in range(len(RETRY_DELAYS) + 1):
-        try:
-            response = get_client().models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt,
-            )
-            if response.text:
-                return response.text.strip(), None
-            return None, "The model returned an empty answer."
-        except Exception as e:
-            last_error = e
-            message = str(e)
-            is_temporary = any(
-                word in message
-                for word in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
-            )
-            if is_temporary and attempt < len(RETRY_DELAYS):
-                time.sleep(RETRY_DELAYS[attempt])
-                continue
-            break
+
+    for model in _model_order():
+        for attempt in range(len(RETRY_DELAYS) + 1):
+            try:
+                response = get_client().models.generate_content(
+                    model=model,
+                    contents=prompt,
+                )
+                _working_model = model
+                if response.text:
+                    return response.text.strip(), None
+                return None, "The model returned an empty answer."
+            except Exception as e:
+                last_error = e
+                message = str(e)
+                if "404" in message or "NOT_FOUND" in message:
+                    break  # this model name isn't available, try the next one
+                is_temporary = any(
+                    word in message
+                    for word in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
+                )
+                if is_temporary and attempt < len(RETRY_DELAYS):
+                    time.sleep(RETRY_DELAYS[attempt])
+                    continue
+                return None, last_error
+
     return None, last_error
 
 
