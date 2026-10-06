@@ -93,9 +93,20 @@ def _discover_models():
     return [name for _, _, name in found]
 
 
+def _is_daily_quota(message):
+    """True if a 429 error means the DAILY free limit is used up (or a long wait)."""
+    if "429" not in message and "RESOURCE_EXHAUSTED" not in message:
+        return False
+    if "PerDay" in message:
+        return True
+    wait = re.search(r"retryDelay'?:\s*'?(\d+)s", message)
+    return bool(wait and int(wait.group(1)) > 90)
+
+
 def _try_model(model, prompt):
     """Try one model. Returns (status, value) where status is:
-       "ok" (value = text), "missing" (404, value = error) or "fail" (value = error).
+       "ok" (value = text), "missing" (404), "quota" (daily limit used up)
+       or "fail" (value = error).
     Temporary errors (503 busy, 429 rate limit) are retried a few times.
     """
     last_error = None
@@ -113,6 +124,8 @@ def _try_model(model, prompt):
             message = str(e)
             if "404" in message or "NOT_FOUND" in message:
                 return "missing", e
+            if _is_daily_quota(message):
+                return "quota", e   # waiting a few seconds won't help, try another model
             is_temporary = any(
                 word in message
                 for word in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED")
@@ -136,6 +149,7 @@ def _generate(prompt):
     tried = []
     last_error = None
     discovered = False
+    quota_hit = False
 
     while candidates:
         model = candidates.pop(0)
@@ -151,11 +165,19 @@ def _generate(prompt):
         if status == "fail":
             return None, last_error
 
-        # status == "missing": this model name isn't available to this key
+        # status is "missing" (name not available) or "quota" (daily limit used up).
+        # Each model has its own free quota, so move on to the next one.
+        if status == "quota":
+            quota_hit = True
         if not candidates and not discovered:
             discovered = True
-            candidates = [m for m in _discover_models() if m not in tried][:4]
+            candidates = [m for m in _discover_models() if m not in tried][:6]
 
+    if quota_hit:
+        return None, (
+            "429 RESOURCE_EXHAUSTED: every available Gemini model has used its free "
+            f"daily limit (tried: {', '.join(tried)})."
+        )
     return None, f"No Gemini model worked (tried: {', '.join(tried)}). Last error: {last_error}"
 
 
@@ -195,14 +217,27 @@ New message: {question}
 Standalone question:"""
 
 
+_FOLLOWUP_WORDS = re.compile(
+    r"\b(it|its|it's|they|them|their|theirs|that|this|those|these|he|she|his|her|"
+    r"also|too|another|else|more|former|latter|above|previous)\b|^(and|but|so|what about|how about)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_followup(question):
+    """Short questions or ones with words like 'it' or 'that' probably refer back."""
+    q = question.strip()
+    return len(q.split()) <= 6 or bool(_FOLLOWUP_WORDS.search(q))
+
+
 def rewrite_question(question, history):
     """Return a standalone version of `question`.
 
     If there is no chat history, or anything goes wrong, the original question
     is returned, so rewriting can never break the app.
     """
-    if not history:
-        return question
+    if not history or not looks_like_followup(question):
+        return question   # saves an API call: the question already stands alone
 
     text, error = _generate(build_rewrite_prompt(question, history))
     if error or not text:
@@ -245,11 +280,31 @@ Question: {question}
 Answer:"""
 
 
+_answer_cache = {}
+
+
 def ask_llm(question, chunks):
-    """Return the model's answer as a string."""
+    """Return the model's answer as a string.
+
+    Identical question + passages are answered from a cache, which saves API calls
+    (and your free daily quota) when the same question is asked again.
+    """
+    key = (question.strip().lower(), tuple(c["text"] for c in chunks))
+    if key in _answer_cache:
+        return _answer_cache[key]
+
     text, error = _generate(build_prompt(question, chunks))
     if text:
+        _answer_cache[key] = text
         return text
+
+    message = str(error)
+    if "429" in message or "RESOURCE_EXHAUSTED" in message:
+        return (
+            "Sorry, the free Gemini daily limit has been reached for now, so I "
+            "can't write an answer. The most relevant passages from your "
+            "documents are shown below. Please try again later."
+        )
     return f"Sorry, Gemini could not write an answer right now. (Details: {error})"
 
 
