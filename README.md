@@ -103,6 +103,7 @@ sample_docs/    Files to try the app with
 - Scanned PDFs (images of text) cannot be read, because there is no OCR step.
 - Embeddings and answers use the Gemini API, so the app needs internet and is subject to free-tier rate limits.
 - Answer quality depends on the retrieved passages; the Evaluation tab shows where the search misses.
+- Also make uploading of word documents possible.
 
 ## Ideas for the future
 
