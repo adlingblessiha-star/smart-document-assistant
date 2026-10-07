@@ -1,5 +1,4 @@
 
-
 Upload lecture PDFs or text files, ask questions in a chat, and get answers taken **only from your files**, with the exact passages and page numbers shown so you can check them.
 
 Built for the Nexus VIT Chennai Technical Recruitment 2026 (Problem 02).
@@ -103,10 +102,10 @@ sample_docs/    Files to try the app with
 - Scanned PDFs (images of text) cannot be read, because there is no OCR step.
 - Embeddings and answers use the Gemini API, so the app needs internet and is subject to free-tier rate limits.
 - Answer quality depends on the retrieved passages; the Evaluation tab shows where the search misses.
-- Also make uploading of word documents possible.
 
 ## Ideas for the future
 
 - Hybrid search (keyword plus meaning-based) and a side-by-side comparison with Ctrl+F
 - OCR for scanned PDFs
 - A study mode that makes quiz questions from the uploaded notes
+- Also make uploading of word documents possible.
